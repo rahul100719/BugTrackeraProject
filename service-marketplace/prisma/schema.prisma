@@ -1,0 +1,158 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CUSTOMER
+  WORKER
+}
+
+enum BookingStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+  COMPLETED
+}
+
+model User {
+  id            String         @id @default(cuid())
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  email         String         @unique
+  name          String?
+  phone         String?        @unique
+  role          UserRole       @default(CUSTOMER)
+  passwordHash  String?
+
+  // Relations
+  workerProfile WorkerProfile?
+  bookings      Booking[]      @relation("CustomerBookings")
+  jobs          Booking[]      @relation("WorkerBookings")
+  accounts      Account[]
+  sessions      Session[]
+}
+
+// NextAuth models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  oauth_token_secret String?
+  oauth_token        String?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model WorkerProfile {
+  id             String            @id @default(cuid())
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  user           User              @relation(fields: [userId], references: [id])
+  userId         String            @unique
+  bio            String?
+  // Location (WGS84)
+  latitude       Float
+  longitude      Float
+  address        String?
+  // Services offered by this worker
+  offerings      ServiceOffering[]
+  // Average rating and count (for quick sort/filter)
+  ratingAverage  Float             @default(0)
+  ratingCount    Int               @default(0)
+  isActive       Boolean           @default(true)
+}
+
+model ServiceCategory {
+  id        String            @id @default(cuid())
+  name      String            @unique
+  slug      String            @unique
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  offerings ServiceOffering[]
+}
+
+model ServiceOffering {
+  id               String           @id @default(cuid())
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  workerProfile    WorkerProfile    @relation(fields: [workerProfileId], references: [id])
+  workerProfileId  String
+  category         ServiceCategory  @relation(fields: [categoryId], references: [id])
+  categoryId       String
+  title            String
+  description      String?
+  // Pricing: base price in smallest currency unit (e.g., cents)
+  basePriceCents   Int
+  currency         String           @default("USD")
+  isPublished      Boolean          @default(true)
+  bookings         Booking[]
+}
+
+model Booking {
+  id                 String           @id @default(cuid())
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  status             BookingStatus    @default(PENDING)
+
+  // Relations
+  customer           User             @relation("CustomerBookings", fields: [customerId], references: [id])
+  customerId         String
+  worker             User             @relation("WorkerBookings", fields: [workerId], references: [id])
+  workerId           String
+  serviceOffering    ServiceOffering  @relation(fields: [serviceOfferingId], references: [id])
+  serviceOfferingId  String
+
+  // Scheduled time window
+  scheduledStart     DateTime?
+  scheduledEnd       DateTime?
+
+  // Location where service will be delivered
+  latitude           Float
+  longitude          Float
+  address            String?
+
+  // Pricing snapshot at time of booking (cents)
+  priceCents         Int
+  currency           String           @default("USD")
+
+  // Optional notes from customer
+  notes              String?
+}
